@@ -34,8 +34,14 @@ app.get("*", vValidator("query", ImageTransform), async (c) => {
   if (obj === null) {
     return c.notFound();
   }
+  const opts = c.req.valid("query");
+  if (Object.keys(opts).length === 0) {
+    const headers = new Headers();
+    obj.writeHttpMetadata(headers);
+    return new Response(obj.body, { headers });
+  }
   const result = await c.env.IMAGES.input(obj.body)
-    .transform(c.req.valid("query"))
+    .transform(opts)
     .output({ format: "image/webp" });
   return result.response();
 });
