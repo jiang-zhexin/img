@@ -1,41 +1,43 @@
 import { Hono } from "hono";
 import { cache } from "hono/cache";
 import { etag } from "hono/etag";
+import { logger } from "hono/logger";
+import { vValidator } from "@hono/valibot-validator";
+
+import { ImageTransform } from "./schema/image_transform";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
-const imgApp = new Hono<{ Bindings: CloudflareBindings }>();
+app.use(logger());
 
-app.route("*.jpg", imgApp);
-app.route("*.jpeg", imgApp);
-app.route("*.png", imgApp);
-app.route("*.webp", imgApp);
+app.use(async (c, next) => {
+  const cache = await caches.open("transformed-images");
+  const cacheResponse = await cache.match(c.req.url);
+  if (cacheResponse) {
+    return cacheResponse;
+  }
+  await next();
+});
 
-imgApp.use(
-  "*",
-  async (c, next) => {
-    const cache = await caches.open("transformed-images");
-    const cacheResponse = await cache.match(c.req.url);
-    if (cacheResponse) {
-      return cacheResponse;
-    }
-    await next();
-  },
+app.use(
   cache({
     cacheName: "transformed-images",
-    cacheControl: "max-age=60",
-  }),
-  etag(),
-  async (c) => {
-    const obj = await c.env.BUCKET.get(c.req.path);
-    if (obj === null) {
-      return c.notFound();
-    }
-    const result = await c.env.IMAGES.input(obj.body)
-      .transform({ width: 600 })
-      .output({ format: "image/webp", quality: 50 });
-    return result.response();
-  }
+    cacheControl: "public, max-age=31556952, immutable",
+  })
 );
+
+app.use(etag());
+
+app.get("*", vValidator("query", ImageTransform), async (c) => {
+  const key = c.req.path.slice(1);
+  const obj = await c.env.BUCKET.get(key);
+  if (obj === null) {
+    return c.notFound();
+  }
+  const result = await c.env.IMAGES.input(obj.body)
+    .transform(c.req.valid("query"))
+    .output({ format: "image/webp" });
+  return result.response();
+});
 
 export default app;
