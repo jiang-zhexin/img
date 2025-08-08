@@ -13,6 +13,5 @@ enabled = true
 binding = 'BUCKET'
 bucket_name = 'img'
 
-
 [images]
 binding = "IMAGES"
